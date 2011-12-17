@@ -1,0 +1,98 @@
+# Benjamin Lockwood, lockwood@fas.harvard.edu
+
+################################################################################
+##  Create an agent who finds optimal income given tax regime
+
+reset;
+option knitro_options 'hessopt=3 maxit=1000 ms_enable=1 ms_maxsolves=10';
+option randseed 3;
+
+
+################################################################################
+##  Define model
+
+# Characterize agents
+param nAgents;
+set I := {1..nAgents};
+param B;
+
+
+################################################################################
+##  Provide data
+
+data;
+
+# Agents
+param nAgents = 80;
+param B = 3;
+
+################################################################################
+##  Declare variables
+
+model;
+
+# Simulate agents
+param w {I} := exp(Normal(1.6,0.5));
+
+# Agents' choice variable: earnings
+var y {i in I} >= 0 := w[i];                    # start with laissez faire point
+
+# Roots of each U'_j(y)
+var R1 {i in I} >= 0;
+var R2 {i in I} >= 0;
+
+# Control variables for government (tax rates)
+var T1 >= -1, <= 1 := 0.5;
+var T2 >= 0, <= 1 := 0.5;
+
+# Auxiliary variables (not searched over, just defined for convenience)
+var TR {i in I} = T1*min(B,y[i]) + T2*max(0,y[i] - B);
+var G = (sum {i in I} TR[i])/nAgents;
+var U {i in I} = log(G+ y[i] - TR[i]) - (y[i]/w[i])^2/2;
+
+
+################################################################################
+##  Characterize optimization problem
+
+# maximize obj: 0;
+maximize obj: sum {i in I} U[i]; # maximize utility
+
+subject to 
+Progressive:
+	T2 >= T1;
+Roots1 {i in I}:
+	(1 - T1)/(G + (1 - T1)*R1[i]) - R1[i]/w[i]^2 = 0;
+Roots2 {i in I}:
+	(1 - T2)/(G + (T2 - T1)*B + (1 - T2)*R2[i]) - R2[i]/w[i]^2 = 0;
+# "Equality" constraints, one for each kink
+Ceq1 {i in I}:
+	(R1[i] - B)*(y[i]^2*(y[i] - R1[i])^2) >= 0;
+Ceq2 {i in I}:
+	R1[i]*(R2[i] - B)*((y[i] - R1[i])^2*(y[i] - B)^2) >= 0;
+Ceq3 {i in I}:
+	(B - R1[i])*((y[i] - B)^2*(y[i] - R2[i])^2) >= 0;
+# Ineq constraints, 2 for each kink (Vert and Uprime), y[i] >= 0 already done
+Cineq1U {i in I}:
+	(B - R1[i])*(y[i] - R1[i]) >= 0;
+Cineq2V {i in I}:
+	(B - R2[i])*(B - y[i]) >= 0;
+Cineq2U {i in I}:
+	R1[i]*(R1[i] - y[i]) >= 0;
+Cineq3V {i in I}:
+	(R1[i] - B)*(y[i] - B) >= 0;
+Cineq3U {i in I}:
+	y[i] - R2[i] >= 0;
+
+problem compTest: 
+	obj, 
+	y, R1, R2, T1, T2,
+	Roots1, Roots2, Progressive, 
+	Ceq1, Ceq2, Ceq3, 
+	Cineq1U, Cineq2V, Cineq2U, Cineq3V, Cineq3U;
+
+
+################################################################################
+##  Solve and display output
+
+solve compTest;
+display y, G, B, T1, T2;
